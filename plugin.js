@@ -5,10 +5,10 @@
  * no second login prompt.
  *
  * Install (in HireHop → Settings → Company Settings → Plugins):
- *   https://cdn.jsdelivr.net/gh/AdamYesEvents/HH-Workshop-HH@mendo-plugin-v0.1.1/plugin.js
+ *   https://cdn.jsdelivr.net/gh/AdamYesEvents/HH-Workshop-HH@mendo-plugin-v0.1.2/plugin.js
  * (Use jsDelivr, not raw.githubusercontent.com — raw refuses to execute JS.)
  *
- * Version: 0.1.1
+ * Version: 0.1.2
  */
 
 (function () {
@@ -17,7 +17,7 @@
   // ============================================================
   // CONFIG — edit before tagging a release
   // ============================================================
-  var MENDO_ORIGIN = "https://mendo.yes.net";
+  var MENDO_HOST = "mendo.yes.net";
   var PLUGIN_SECRET = "n9dx6ChRydj_Bi_Vr2ho1tWKMQHFE6dCFXzQhw_MzYc";
 
   // ============================================================
@@ -47,7 +47,7 @@
     for (var i = 0; i < b.length; i++) out += ("0" + b[i].toString(16)).slice(-2);
     return out;
   }
-  async function buildSignedUrl(next) {
+  async function buildSignedUrl(scheme, next) {
     var id = hhUserId();
     if (!id) throw new Error("couldn't read your HireHop user id (window.user.ID is empty)");
     var timestamp = Math.floor(Date.now() / 1000);
@@ -59,31 +59,33 @@
     var qs = new URLSearchParams({
       u: String(id), t: String(timestamp), n: nonce, s: ab2hex(sig), next: next || "/"
     });
-    return MENDO_ORIGIN + "/sso/plugin?" + qs.toString();
+    return scheme + "://" + MENDO_HOST + "/sso/plugin?" + qs.toString();
   }
 
   // ============================================================
-  // Click handler. Open a popup SYNCHRONOUSLY in the same tick as the
-  // click (keeps the user-gesture alive, so Chrome won't block it),
-  // then set its location once the HMAC resolves. Async operations
-  // between click and window.open always trip popup blockers.
+  // Click handler. Open popup synchronously (keeps the user gesture
+  // so Chrome won't block it), then redirect once HMAC resolves.
   // ============================================================
-  function onClick(e) {
-    if (e && e.preventDefault) e.preventDefault();
-    var popup = window.open("about:blank", "_blank"); // DO NOT use "noopener" — we need to redirect the popup
-    buildSignedUrl("/").then(function (url) {
-      try { console.log("[mendo-plugin] opening", url.slice(0, 80) + "…"); } catch (_) {}
-      if (popup) popup.location.href = url;
-      else window.location.href = url; // fallback if popup blocked
-    }).catch(function (err) {
-      try { console.error("[mendo-plugin]", err && err.message); } catch (_) {}
-      if (popup) popup.close();
-      alert("Mendo plugin: " + (err && err.message ? err.message : "failed to build sign-in link"));
-    });
+  function clickFor(scheme) {
+    return function (e) {
+      if (e && e.preventDefault) e.preventDefault();
+      var popup = window.open("about:blank", "_blank");
+      buildSignedUrl(scheme, "/").then(function (url) {
+        try { console.log("[mendo-plugin] opening", url.slice(0, 80) + "…"); } catch (_) {}
+        if (popup) popup.location.href = url;
+        else window.location.href = url;
+      }).catch(function (err) {
+        try { console.error("[mendo-plugin]", err && err.message); } catch (_) {}
+        if (popup) popup.close();
+        alert("Mendo plugin: " + (err && err.message ? err.message : "failed to build sign-in link"));
+      });
+    };
   }
 
   // ============================================================
-  // Injection #1 — header: Mendo badge left of "Yes Events Ltd"
+  // Injection #1 — header: Mendo badge left of "Yes Events Ltd".
+  // Primary link uses HTTPS; a smaller "(HTTP)" link is shown
+  // next to it so cert-less machines have a working fallback.
   // Idempotent; safe to call every tick.
   // ============================================================
   function injectHeader($) {
@@ -91,11 +93,13 @@
     if (!$company.length) return;
     if ($company.prev(".mendo-header-cell").length) return;
 
-    var $cell = $('<div class="mendo-header-cell" style="display:flex;align-items:center;gap:6px;font-size:13px;border-right:1px solid rgba(0,0,0,0.1);padding-right:15px;cursor:pointer">' +
+    var $cell = $('<div class="mendo-header-cell" style="display:flex;align-items:center;gap:8px;font-size:13px;border-right:1px solid rgba(0,0,0,0.1);padding-right:15px">' +
       '<span class="ui-icon ui-icon-extlink" style="margin:0;transform:scale(1.2);flex-shrink:0"></span>' +
       '<span class="mendo-header-link" style="text-decoration:underline;cursor:pointer;white-space:nowrap">Open Mendo</span>' +
+      '<span class="mendo-header-http" title="For machines without the HTTPS root certificate installed" style="text-decoration:underline;cursor:pointer;white-space:nowrap;color:#888;font-size:11px">(HTTP)</span>' +
       '</div>');
-    $cell.on("click", onClick);
+    $cell.find(".ui-icon, .mendo-header-link").on("click", clickFor("https"));
+    $cell.find(".mendo-header-http").on("click", clickFor("http"));
     $company.before($cell);
   }
 
