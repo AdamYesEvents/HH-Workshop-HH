@@ -29,10 +29,6 @@ Injects an **Open Mendo** button in HireHop's top-right header (left of
 the company name). Clicking it signs the current HH user into Mendo via
 a short-lived HMAC-signed URL — no second login prompt.
 
-Three more injection points are coming (home preset tiles, favourite
-tiles, next to the Stock Check button) — currently commented out in
-`plugin.js`, enabled individually once the HH DOM selectors are
-confirmed.
 
 ## Pairing
 
